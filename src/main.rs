@@ -92,6 +92,10 @@ async fn archive(parachain_url: &str, blocks_diff: u32) -> Result<(), Box<dyn st
     let mut duplicated_blocks = std::collections::HashMap::new();
     let mut last_author = None;
 
+    let mut authoring_statistincs = std::collections::HashMap::new();
+    let mut authoring_in_row = std::collections::HashMap::new();
+    let mut num_produced = 1;
+
     while target != number {
         let hash = legacy_methods
             .chain_get_block_hash(Some(target.into()))
@@ -135,10 +139,28 @@ async fn archive(parachain_url: &str, blocks_diff: u32) -> Result<(), Box<dyn st
         }
 
         let author_bytes = author.encode();
+        authoring_statistincs
+            .entry(author_bytes.clone())
+            .and_modify(|count| *count += 1)
+            .or_insert(1);
+
         let same_author = last_author
             .as_ref()
             .map(|last| last == &author_bytes)
             .unwrap_or(false);
+        if same_author {
+            num_produced += 1;
+        } else {
+            if num_produced > 1 {
+                authoring_in_row
+                    .entry(num_produced)
+                    .and_modify(|count| *count += 1)
+                    .or_insert(1);
+            }
+
+            num_produced = 1;
+        }
+
         let author_labe = if same_author { "Same" } else { "New" };
         last_author = Some(author_bytes);
 
@@ -176,6 +198,7 @@ async fn archive(parachain_url: &str, blocks_diff: u32) -> Result<(), Box<dyn st
 
     println!("Archive completed successfully.");
     println!("Total duplicated blocks: {}", duplicated_blocks.len());
+    println!(" - produced in a row: {:#?}", authoring_in_row);
 
     Ok(())
 }
