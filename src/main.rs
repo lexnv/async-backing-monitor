@@ -18,7 +18,7 @@ pub async fn main() {
         if let Err(err) = AsyncBackingMonitor::new()
             .run(
                 "wss://rpc-kusama.helixstreet.io",
-                "wss://statemine.public.curie.radiumblock.co/ws",
+                "wss://asset-hub-kusama.dotters.network",
             )
             .await
         {
@@ -47,137 +47,6 @@ impl AsyncBackingMonitor {
         }
     }
 
-    async fn handle_relay_chain<C: OnlineClientT<PolkadotConfig>>(
-        &mut self,
-        block: subxt::blocks::Block<PolkadotConfig, C>,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        let block_number = block.header().number;
-
-        println!(
-            "  Relay Block #{block_number}, hash={:?} (elasped {:?})",
-            block.hash(),
-            self.relay_chain_time.elapsed()
-        );
-        self.relay_chain_time = std::time::Instant::now();
-
-        // Log each of the extrinsic with it's associated events:
-        let extrinsics = block.extrinsics().await?;
-        for ext in extrinsics.iter() {
-            let events = ext.events().await?;
-
-            for evt in events.iter() {
-                let evt = evt?;
-                let Ok(event) = evt.as_root_event::<kusama_relay_chain::Event>() else {
-                    continue;
-                };
-
-                match event {
-                    kusama_relay_chain::Event::ParaInclusion(
-                        ParaInclusionEvent::CandidateBacked(receipt, ..),
-                    ) => {
-                        let descriptor = receipt.descriptor;
-                        let para_id = descriptor.para_id.0;
-                        let relay_chain_parent = descriptor.relay_parent;
-                        let para_head = descriptor.para_head;
-
-                        if para_id != 1000 {
-                            continue;
-                        }
-                        println!(
-                            "   |--> CandidateBacked: para_head={:?} relay_parent={:?}\n",
-                            para_head, relay_chain_parent
-                        );
-                    }
-                    _ => (),
-                };
-            }
-        }
-        Ok(())
-    }
-
-    async fn handle_parachain<C: OnlineClientT<PolkadotConfig>>(
-        &mut self,
-        block: subxt::blocks::Block<PolkadotConfig, C>,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        let block_number = block.header().number;
-
-        if block.header().digest.logs.is_empty() {
-            println!("  No logs in this block.");
-            return Ok(());
-        }
-
-        let author = &block.header().digest.logs[0];
-
-        let extrinsics = block
-            .extrinsics()
-            .await
-            .inspect_err(|err| println!("Failed to decode extrinsics: {:?}", err))?;
-
-        let mut timestamp = None;
-        let mut duplicate = None;
-
-        let ext = extrinsics.iter().skip(1).next();
-        if let Some(ext) = ext {
-            let bytes = ext.bytes().to_vec();
-            timestamp = Some(bytes.clone());
-
-            match self.timestamps.entry(bytes) {
-                std::collections::hash_map::Entry::Occupied(mut entry) => {
-                    let block = entry.get_mut();
-                    self.duplicated_blocks.insert(*block, block_number);
-                    duplicate = Some((*block, block_number));
-                }
-                std::collections::hash_map::Entry::Vacant(entry) => {
-                    entry.insert(block_number);
-                }
-            }
-        }
-
-        let author_bytes = author.encode();
-        let same_author = self
-            .last_author
-            .as_ref()
-            .map(|last| last == &author_bytes)
-            .unwrap_or(false);
-        let author_labe = if same_author { "Same" } else { "New" };
-        self.last_author = Some(author_bytes);
-
-        if let Some((_origin_block, duplicate_number)) = duplicate {
-            println!(
-                "[X] AssetHubKusama: Block #{block_number}, hash={:?} (elasped {:?})",
-                block.hash(),
-                self.now.elapsed()
-            );
-            println!(
-                "  |--> {author_labe} Author: {:?}",
-                hex::encode(author.encode())
-            );
-            println!(
-                "  |--> ({}) Duplicate Timestamp extrinsic found: initial={} current_block={}\n",
-                self.duplicated_blocks.len(),
-                duplicate_number,
-                block_number
-            );
-        } else {
-            println!(
-                "AssetHubKusama: Block #{block_number}, hash={:?} (elasped {:?})",
-                block.hash(),
-                self.now.elapsed()
-            );
-            println!(
-                "  |--> {author_labe} Author: {:?}",
-                hex::encode(author.encode())
-            );
-            println!(
-                "  |--> Timestamp.Set: {:?}\n",
-                hex::encode(timestamp.unwrap_or_default())
-            );
-        }
-
-        self.now = std::time::Instant::now();
-        Ok(())
-    }
-
     async fn run(
         mut self,
         relay_chain_url: &'static str,
@@ -198,16 +67,132 @@ impl AsyncBackingMonitor {
                     let Some(block) = block else {
                         break;
                     };
+                    let block = block?;
 
-                    self.handle_relay_chain(block?).await?;
+                    let block_number = block.header().number;
+                    println!(
+                        "  Relay Block #{block_number}, hash={:?} (elasped {:?})",
+                        block.hash(),
+                        self.relay_chain_time.elapsed()
+                    );
+                    self.relay_chain_time = std::time::Instant::now();
+
+                    // Log each of the extrinsic with it's associated events:
+                    let extrinsics = block.extrinsics().await?;
+                    for ext in extrinsics.iter() {
+                        let events = ext.events().await?;
+
+                        for evt in events.iter() {
+                            let evt = evt?;
+                            let Ok(event) = evt.as_root_event::<kusama_relay_chain::Event>() else {
+                                continue;
+                            };
+
+                            match event {
+                                kusama_relay_chain::Event::ParaInclusion(
+                                    ParaInclusionEvent::CandidateBacked(receipt, ..),
+                                ) => {
+                                    let descriptor = receipt.descriptor;
+                                    let para_id = descriptor.para_id.0;
+                                    let relay_chain_parent = descriptor.relay_parent;
+                                    let para_head = descriptor.para_head;
+
+                                    if para_id != 1000 {
+                                        continue;
+                                    }
+                                    println!(
+                                        "   |--> CandidateBacked: para_head={:?} relay_parent={:?}\n",
+                                        para_head, relay_chain_parent
+                                    );
+                                }
+                                _ => (),
+                            };
+                        }
+                    }
                 },
 
                 block = parachain_sub.next() => {
                     let Some(block) = block else {
                         break;
                     };
+                    let block = block?;
 
-                    self.handle_parachain(block?).await?;
+                    let block_number = block.header().number;
+
+                    if block.header().digest.logs.is_empty() {
+                        println!("  No logs in this block.");
+                        return Ok(());
+                    }
+
+                    let author = &block.header().digest.logs[0];
+
+                    let extrinsics = block
+                        .extrinsics()
+                        .await
+                        .inspect_err(|err| println!("Failed to decode extrinsics: {:?}", err))?;
+
+                    let mut timestamp = None;
+                    let mut duplicate = None;
+
+                    let ext = extrinsics.iter().skip(1).next();
+                    if let Some(ext) = ext {
+                        let bytes = ext.bytes().to_vec();
+                        timestamp = Some(bytes.clone());
+
+                        match self.timestamps.entry(bytes) {
+                            std::collections::hash_map::Entry::Occupied(mut entry) => {
+                                let block = entry.get_mut();
+                                self.duplicated_blocks.insert(*block, block_number);
+                                duplicate = Some((*block, block_number));
+                            }
+                            std::collections::hash_map::Entry::Vacant(entry) => {
+                                entry.insert(block_number);
+                            }
+                        }
+                    }
+
+                    let author_bytes = author.encode();
+                    let same_author = self
+                        .last_author
+                        .as_ref()
+                        .map(|last| last == &author_bytes)
+                        .unwrap_or(false);
+                    let author_labe = if same_author { "Same" } else { "New" };
+                    self.last_author = Some(author_bytes);
+
+                    if let Some((_origin_block, duplicate_number)) = duplicate {
+                        println!(
+                            "[X] AssetHubKusama: Block #{block_number}, hash={:?} (elasped {:?})",
+                            block.hash(),
+                            self.now.elapsed()
+                        );
+                        println!(
+                            "  |--> {author_labe} Author: {:?}",
+                            hex::encode(author.encode())
+                        );
+                        println!(
+                            "  |--> ({}) Duplicate Timestamp extrinsic found: initial={} current_block={}\n",
+                            self.duplicated_blocks.len(),
+                            duplicate_number,
+                            block_number
+                        );
+                    } else {
+                        println!(
+                            "AssetHubKusama: Block #{block_number}, hash={:?} (elasped {:?})",
+                            block.hash(),
+                            self.now.elapsed()
+                        );
+                        println!(
+                            "  |--> {author_labe} Author: {:?}",
+                            hex::encode(author.encode())
+                        );
+                        println!(
+                            "  |--> Timestamp.Set: 0x{}\n",
+                            hex::encode(timestamp.unwrap_or_default())
+                        );
+                    }
+
+                    self.now = std::time::Instant::now();
                 }
             }
         }
