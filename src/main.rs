@@ -15,7 +15,13 @@ type ParaInclusionEvent =
 pub async fn main() {
     // Reconnect on loop errors.
     loop {
-        if let Err(err) = AsyncBackingMonitor::new().run().await {
+        if let Err(err) = AsyncBackingMonitor::new()
+            .run(
+                "wss://rpc-kusama.helixstreet.io",
+                "wss://statemine.public.curie.radiumblock.co/ws",
+            )
+            .await
+        {
             eprintln!("{err}");
             println!("ERROR: {err}");
         }
@@ -178,15 +184,15 @@ impl AsyncBackingMonitor {
         Ok(())
     }
 
-    async fn run(mut self) -> Result<(), Box<dyn std::error::Error>> {
-        let api = OnlineClient::<PolkadotConfig>::from_url(
-            "wss://statemine.public.curie.radiumblock.co/ws",
-        )
-        .await?;
+    async fn run(
+        mut self,
+        relay_chain_url: &'static str,
+        parachain_url: &'static str,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let api = OnlineClient::<PolkadotConfig>::from_url(parachain_url).await?;
         println!("Connection with parachain established.");
 
-        let kusama_api =
-            OnlineClient::<PolkadotConfig>::from_url("wss://rpc-kusama.helixstreet.io").await?;
+        let kusama_api = OnlineClient::<PolkadotConfig>::from_url(relay_chain_url).await?;
         println!("Connection with Kusama relay chain established.");
 
         let mut parachain_sub = api.blocks().subscribe_best().await?;
