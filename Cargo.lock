@@ -79,6 +79,8 @@ checksum = "7c02d123df017efcdfbd739ef81735b36c5ba83ec3c59c80a9d7ecc718f92e50"
 name = "async-backing-monitor"
 version = "0.1.0"
 dependencies = [
+ "hex",
+ "parity-scale-codec",
  "subxt",
  "subxt-signer",
  "tokio",
@@ -1076,6 +1078,9 @@ name = "hex"
 version = "0.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7f24254aa9a54b5c858eaee2f5bccdb46aaf0e486a595ed5fd8f86ba55232a70"
+dependencies = [
+ "serde",
+]
 
 [[package]]
 name = "hex-conservative"
