@@ -42,6 +42,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
     let mut relay_chain_time = std::time::Instant::now();
     let mut now = std::time::Instant::now();
     let mut duplicated_blocks = std::collections::HashMap::new();
+    let mut last_author = None;
 
     loop {
         tokio::select! {
@@ -133,13 +134,18 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
                     }
                 }
 
+                let author_bytes = author.encode();
+                let same_author = last_author.as_ref().map(|last| last == &author_bytes).unwrap_or(false);
+                let author_labe = if same_author { "Same" } else { "New" };
+                last_author = Some(author_bytes);
+
                 if let Some((_origin_block, duplicate_number)) = duplicate {
                     println!("[X] AssetHubKusama: Block #{block_number}, hash={:?} (elasped {:?})", block.hash(), now.elapsed());
-                    println!("  |--> Author: {:?}", hex::encode(author.encode()));
+                    println!("  |--> {author_labe} Author: {:?}", hex::encode(author.encode()));
                     println!("  |--> Duplicate Timestamp extrinsic found: initial={} current_block={}\n", duplicate_number, block_number);
                 } else {
                     println!("AssetHubKusama: Block #{block_number}, hash={:?} (elasped {:?})", block.hash(), now.elapsed());
-                    println!("  |--> Author: {:?}", hex::encode(author.encode()));
+                    println!("  |--> {author_labe} Author: {:?}", hex::encode(author.encode()));
                     println!("  |--> Timestamp.Set: {:?}\n", timestamp.unwrap_or_default());
                 }
 
