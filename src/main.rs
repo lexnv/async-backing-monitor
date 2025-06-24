@@ -201,8 +201,8 @@ impl AsyncBackingMonitor {
 
     async fn run(
         mut self,
-        relay_chain_url: &'static str,
-        parachain_url: &'static str,
+        relay_chain_url: &str,
+        parachain_url: &str,
     ) -> Result<(), Box<dyn std::error::Error>> {
         let api = OnlineClient::<PolkadotConfig>::from_url(parachain_url).await?;
         println!("Connection with parachain established.");

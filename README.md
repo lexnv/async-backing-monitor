@@ -5,6 +5,48 @@ A simple asynchronous backing monitor for Substrate-based chains, designed to tr
 
 The tool inspects the backed blocks of a parachain and the corresponding relay chain blocks, providing insights into block authorship and timestamps.
 
+## Usage
+
+### Archive
+
+Archive mode to fetch and print blocks from the parachain.
+
+This command connects to the specified parachain URL and retrieves blocks within a specified range (default is 200 blocks back from the latest).
+
+```
+# Check the past 1000 blocks for a parachain.
+> cargo run -- archive --blocks-diff 1000
+
+[X] AssetHubKusama: Block #9809835, hash=0x316679bf41f647082aadb3d593d580853e686fc5152544da7b5a04443d042a7c
+  |--> Same Author: "066175726120a03ab20800000000"
+  |--> (48) Duplicate Timestamp extrinsic found: initial=9809834 current_block=9809835 Timestamp.Set: 0x280503000b70237ca29701
+
+AssetHubKusama: Block #9809836, hash=0xa68955d5a2374c8f2164f472d586547bdfd8a325debffa71662f4b378d414faa
+  |--> New Author: "066175726120a13ab20800000000"
+  |--> Timestamp.Set: 0x280503000be03a7ca29701
+
+AssetHubKusama: Block #9809837, hash=0x4fc92acfd77ccd9104c1459cb1843218dc9c6fc3308b6323ce921ee46a67e56d
+  |--> Same Author: "066175726120a13ab20800000000"
+  |--> Timestamp.Set: 0x280503000b50527ca29701
+
+AssetHubKusama: Block #9809838, hash=0x0be4894eabcd61cbd01bd6d229b84df86a181cafc1587a23daca2cf8e770a906
+  |--> New Author: "066175726120a23ab20800000000"
+  |--> Timestamp.Set: 0x280503000bc0697ca29701
+
+AssetHubKusama: Block #9809839, hash=0x2ba62226998d968cfa5d8b075fcb4bbca0ba857f5b33becc98aabc1920d0530c
+  |--> Same Author: "066175726120a23ab20800000000"
+  |--> Timestamp.Set: 0x280503000b30817ca29701
+
+Archive completed successfully.
+Total duplicated blocks: 48
+```
+
+### Subscribe
+
+Subscribe to the parachain and relay chain blocks.
+
+This command will connect to the specified relay chain and parachain URLs, and will continuously monitor for new blocks, printing out the block number, hash, author, and timestamp of each block (and warn on duplicated timestamps).
+
 ```
 AssetHubKusama: Block #9809277, hash=0x493c58445aeb4c7f1f822a763639933ebf847275117903373a5ae2200580b85d (elasped 4.734257689s)
   |--> Same Author: "0661757261206339b20800000000"
