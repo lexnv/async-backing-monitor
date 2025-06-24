@@ -29,7 +29,7 @@ pub async fn main() {
 }
 
 struct AsyncBackingMonitor {
-    timestamps: std::collections::HashMap<u64, u32>,
+    timestamps: std::collections::HashMap<Vec<u8>, u32>,
     relay_chain_time: std::time::Instant,
     now: std::time::Instant,
     duplicated_blocks: std::collections::HashMap<u32, u32>,
@@ -116,26 +116,20 @@ impl AsyncBackingMonitor {
         let mut timestamp = None;
         let mut duplicate = None;
 
-        for ext in extrinsics.iter() {
-            let decoded_ext = ext.as_root_extrinsic::<asset_hub_kusama::Call>();
-            match decoded_ext {
-                Ok(asset_hub_kusama::Call::Timestamp(
-                    asset_hub_kusama::runtime_types::pallet_timestamp::pallet::Call::set { now },
-                )) => {
-                    timestamp = Some(now);
+        let ext = extrinsics.iter().skip(1).next();
+        if let Some(ext) = ext {
+            let bytes = ext.bytes().to_vec();
+            timestamp = Some(bytes.clone());
 
-                    match self.timestamps.entry(now) {
-                        std::collections::hash_map::Entry::Occupied(mut entry) => {
-                            let block = entry.get_mut();
-                            self.duplicated_blocks.insert(*block, block_number);
-                            duplicate = Some((*block, block_number));
-                        }
-                        std::collections::hash_map::Entry::Vacant(entry) => {
-                            entry.insert(block_number);
-                        }
-                    }
+            match self.timestamps.entry(bytes) {
+                std::collections::hash_map::Entry::Occupied(mut entry) => {
+                    let block = entry.get_mut();
+                    self.duplicated_blocks.insert(*block, block_number);
+                    duplicate = Some((*block, block_number));
                 }
-                _ => {}
+                std::collections::hash_map::Entry::Vacant(entry) => {
+                    entry.insert(block_number);
+                }
             }
         }
 
@@ -176,7 +170,7 @@ impl AsyncBackingMonitor {
             );
             println!(
                 "  |--> Timestamp.Set: {:?}\n",
-                timestamp.unwrap_or_default()
+                hex::encode(timestamp.unwrap_or_default())
             );
         }
 
