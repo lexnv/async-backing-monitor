@@ -1,6 +1,6 @@
 use codec::Encode;
 
-use subxt::{OnlineClient, PolkadotConfig, client::OnlineClientT};
+use subxt::{OnlineClient, PolkadotConfig};
 
 #[subxt::subxt(runtime_metadata_path = "./artifacts/asset_hub_kusama.scale")]
 pub mod asset_hub_kusama {}
@@ -160,7 +160,7 @@ impl AsyncBackingMonitor {
                     let author_labe = if same_author { "Same" } else { "New" };
                     self.last_author = Some(author_bytes);
 
-                    if let Some((_origin_block, duplicate_number)) = duplicate {
+                    if let Some((origin_block, _duplicate_number)) = duplicate {
                         println!(
                             "[X] AssetHubKusama: Block #{block_number}, hash={:?} (elasped {:?})",
                             block.hash(),
@@ -171,10 +171,11 @@ impl AsyncBackingMonitor {
                             hex::encode(author.encode())
                         );
                         println!(
-                            "  |--> ({}) Duplicate Timestamp extrinsic found: initial={} current_block={}\n",
+                            "  |--> ({}) Duplicate Timestamp extrinsic found: initial={} current_block={} Timestamp.Set: 0x{}\n",
                             self.duplicated_blocks.len(),
-                            duplicate_number,
-                            block_number
+                            origin_block,
+                            block_number,
+                            hex::encode(timestamp.unwrap_or_default())
                         );
                     } else {
                         println!(
