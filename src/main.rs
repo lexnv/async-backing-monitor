@@ -1,5 +1,5 @@
+use clap::Parser as ClapParser;
 use codec::Encode;
-
 use subxt::{OnlineClient, PolkadotConfig};
 
 #[subxt::subxt(runtime_metadata_path = "./artifacts/asset_hub_kusama.scale")]
@@ -11,21 +11,157 @@ pub mod kusama_relay_chain {}
 type ParaInclusionEvent =
     kusama_relay_chain::runtime_types::polkadot_runtime_parachains::inclusion::pallet::Event;
 
+/// Command for interacting with the CLI.
+#[derive(Debug, ClapParser)]
+enum Command {
+    Subscribe,
+    Archive {
+        #[clap(long, default_value = "wss://asset-hub-kusama.dotters.network")]
+        parachain_url: String,
+
+        #[clap(long)]
+        blocks_diff: Option<u32>,
+    },
+}
+
 #[tokio::main]
 pub async fn main() {
-    // Reconnect on loop errors.
-    loop {
-        if let Err(err) = AsyncBackingMonitor::new()
-            .run(
-                "wss://rpc-kusama.helixstreet.io",
-                "wss://asset-hub-kusama.dotters.network",
-            )
-            .await
-        {
-            eprintln!("{err}");
-            println!("ERROR: {err}");
+    let args = Command::parse();
+
+    match args {
+        Command::Subscribe => {
+            // Reconnect on loop errors.
+            loop {
+                if let Err(err) = AsyncBackingMonitor::new()
+                    .run(
+                        "wss://rpc-kusama.helixstreet.io",
+                        "wss://asset-hub-kusama.dotters.network",
+                    )
+                    .await
+                {
+                    eprintln!("{err}");
+                    println!("ERROR: {err}");
+                }
+            }
+        }
+        Command::Archive {
+            parachain_url,
+            blocks_diff,
+        } => {
+            archive(parachain_url.as_str(), blocks_diff.unwrap_or(200))
+                .await
+                .expect("Failed to run archive mode");
         }
     }
+}
+
+async fn archive(parachain_url: &str, blocks_diff: u32) -> Result<(), Box<dyn std::error::Error>> {
+    let api = OnlineClient::<PolkadotConfig>::from_url(parachain_url).await?;
+    println!("Connection with parachain established.");
+
+    let rpc_client = subxt_rpcs::RpcClient::from_url(parachain_url).await?;
+    let legacy_methods: subxt_rpcs::LegacyRpcMethods<PolkadotConfig> =
+        subxt_rpcs::LegacyRpcMethods::new(rpc_client);
+    println!("Connection with RPC client established.");
+
+    let latest = api.blocks().at_latest().await?;
+    let number = latest.header().number;
+    println!(
+        "AssetHubKusama: Latest parachain block #{number}, hash={:?}",
+        latest.hash()
+    );
+
+    let mut target = number - blocks_diff;
+    let mut timestamps = std::collections::HashMap::new();
+    let mut duplicated_blocks = std::collections::HashMap::new();
+    let mut last_author = None;
+
+    while target != number {
+        let hash = legacy_methods
+            .chain_get_block_hash(Some(target.into()))
+            .await?
+            .unwrap();
+        let block = api.blocks().at(hash).await?;
+        let block_number = block.header().number;
+
+        target += 1;
+
+        if block.header().digest.logs.is_empty() {
+            println!("  No logs in this block.");
+            return Ok(());
+        }
+
+        let author = &block.header().digest.logs[0];
+
+        let extrinsics = block
+            .extrinsics()
+            .await
+            .inspect_err(|err| println!("Failed to decode extrinsics: {:?}", err))?;
+
+        let mut timestamp = None;
+        let mut duplicate = None;
+
+        let ext = extrinsics.iter().skip(1).next();
+        if let Some(ext) = ext {
+            let bytes = ext.bytes().to_vec();
+            timestamp = Some(bytes.clone());
+
+            match timestamps.entry(bytes) {
+                std::collections::hash_map::Entry::Occupied(mut entry) => {
+                    let block = entry.get_mut();
+                    duplicated_blocks.insert(*block, block_number);
+                    duplicate = Some((*block, block_number));
+                }
+                std::collections::hash_map::Entry::Vacant(entry) => {
+                    entry.insert(block_number);
+                }
+            }
+        }
+
+        let author_bytes = author.encode();
+        let same_author = last_author
+            .as_ref()
+            .map(|last| last == &author_bytes)
+            .unwrap_or(false);
+        let author_labe = if same_author { "Same" } else { "New" };
+        last_author = Some(author_bytes);
+
+        if let Some((origin_block, _duplicate_number)) = duplicate {
+            println!(
+                "[X] AssetHubKusama: Block #{block_number}, hash={:?}",
+                block.hash(),
+            );
+            println!(
+                "  |--> {author_labe} Author: {:?}",
+                hex::encode(author.encode())
+            );
+            println!(
+                "  |--> ({}) Duplicate Timestamp extrinsic found: initial={} current_block={} Timestamp.Set: 0x{}\n",
+                duplicated_blocks.len(),
+                origin_block,
+                block_number,
+                hex::encode(timestamp.unwrap_or_default())
+            );
+        } else {
+            println!(
+                "AssetHubKusama: Block #{block_number}, hash={:?}",
+                block.hash(),
+            );
+            println!(
+                "  |--> {author_labe} Author: {:?}",
+                hex::encode(author.encode())
+            );
+            println!(
+                "  |--> Timestamp.Set: 0x{}\n",
+                hex::encode(timestamp.unwrap_or_default())
+            );
+        }
+    }
+
+    println!("Archive completed successfully.");
+    println!("Total duplicated blocks: {}", duplicated_blocks.len());
+
+    Ok(())
 }
 
 struct AsyncBackingMonitor {
