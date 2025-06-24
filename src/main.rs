@@ -91,10 +91,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
                     break;
                 };
                 let block = block?;
-
                 let block_number = block.header().number;
-
-
 
                 if block.header().digest.logs.is_empty() {
                     println!("  No logs in this block.");
@@ -142,7 +139,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
                 if let Some((_origin_block, duplicate_number)) = duplicate {
                     println!("[X] AssetHubKusama: Block #{block_number}, hash={:?} (elasped {:?})", block.hash(), now.elapsed());
                     println!("  |--> {author_labe} Author: {:?}", hex::encode(author.encode()));
-                    println!("  |--> Duplicate Timestamp extrinsic found: initial={} current_block={}\n", duplicate_number, block_number);
+                    println!("  |--> ({}) Duplicate Timestamp extrinsic found: initial={} current_block={}\n", duplicated_blocks.len(), duplicate_number, block_number);
                 } else {
                     println!("AssetHubKusama: Block #{block_number}, hash={:?} (elasped {:?})", block.hash(), now.elapsed());
                     println!("  |--> {author_labe} Author: {:?}", hex::encode(author.encode()));
