@@ -14,7 +14,23 @@ type ParaInclusionEvent =
 /// Command for interacting with the CLI.
 #[derive(Debug, ClapParser)]
 enum Command {
-    Subscribe,
+    /// Subscribe to the parachain and relay chain blocks.
+    ///
+    /// This command will connect to the specified relay chain and parachain URLs,
+    /// and will continuously monitor for new blocks, printing out the block number,
+    /// hash, author, and timestamp of each block (and warn on duplicated timestamps).
+    Subscribe {
+        #[clap(long, default_value = "wss://rpc-kusama.helixstreet.io")]
+        relay_chain_url: String,
+
+        #[clap(long, default_value = "wss://asset-hub-kusama.dotters.network")]
+        parachain_url: String,
+    },
+
+    /// Archive mode to fetch and print blocks from the parachain.
+    ///
+    /// This command connects to the specified parachain URL and retrieves
+    /// blocks within a specified range (default is 200 blocks back from the latest).
     Archive {
         #[clap(long, default_value = "wss://asset-hub-kusama.dotters.network")]
         parachain_url: String,
@@ -29,14 +45,14 @@ pub async fn main() {
     let args = Command::parse();
 
     match args {
-        Command::Subscribe => {
+        Command::Subscribe {
+            relay_chain_url,
+            parachain_url,
+        } => {
             // Reconnect on loop errors.
             loop {
                 if let Err(err) = AsyncBackingMonitor::new()
-                    .run(
-                        "wss://rpc-kusama.helixstreet.io",
-                        "wss://asset-hub-kusama.dotters.network",
-                    )
+                    .run(relay_chain_url.as_str(), parachain_url.as_str())
                     .await
                 {
                     eprintln!("{err}");
