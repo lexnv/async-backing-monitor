@@ -197,7 +197,12 @@ async fn archive(parachain_url: &str, blocks_diff: u32) -> Result<(), Box<dyn st
     }
 
     println!("Archive completed successfully.");
-    println!("Total duplicated blocks: {}", duplicated_blocks.len());
+    println!(
+        "Total blocks with the same timestamp: {} / {} ({:.2}%)",
+        duplicated_blocks.len(),
+        blocks_diff,
+        (duplicated_blocks.len() as f64 / blocks_diff as f64 * 100.0)
+    );
     println!(" - produced in a row: {:#?}", authoring_in_row);
 
     Ok(())
