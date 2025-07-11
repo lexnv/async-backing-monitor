@@ -32,6 +32,9 @@ enum Command {
     /// This command connects to the specified parachain URL and retrieves
     /// blocks within a specified range (default is 200 blocks back from the latest).
     Archive {
+        #[clap(long, default_value = "wss://rpc-kusama.helixstreet.io")]
+        relay_chain_url: String,
+
         #[clap(long, default_value = "wss://asset-hub-kusama.dotters.network")]
         parachain_url: String,
 
@@ -61,24 +64,41 @@ pub async fn main() {
             }
         }
         Command::Archive {
+            relay_chain_url,
             parachain_url,
             blocks_diff,
         } => {
-            archive(parachain_url.as_str(), blocks_diff.unwrap_or(200))
-                .await
-                .expect("Failed to run archive mode");
+            archive(
+                relay_chain_url.as_str(),
+                parachain_url.as_str(),
+                blocks_diff.unwrap_or(200),
+            )
+            .await
+            .expect("Failed to run archive mode");
         }
     }
 }
 
-async fn archive(parachain_url: &str, blocks_diff: u32) -> Result<(), Box<dyn std::error::Error>> {
+async fn archive(
+    relay_chain_url: &str,
+    parachain_url: &str,
+    blocks_diff: u32,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let now = std::time::Instant::now();
+
     let api = OnlineClient::<PolkadotConfig>::from_url(parachain_url).await?;
     println!("Connection with parachain established.");
 
     let rpc_client = subxt_rpcs::RpcClient::from_url(parachain_url).await?;
     let legacy_methods: subxt_rpcs::LegacyRpcMethods<PolkadotConfig> =
-        subxt_rpcs::LegacyRpcMethods::new(rpc_client);
+        subxt_rpcs::LegacyRpcMethods::new(rpc_client.clone());
+    let chain_head_client =
+        subxt_rpcs::ChainHeadRpcMethods::<PolkadotConfig>::new(rpc_client.clone());
     println!("Connection with RPC client established.");
+
+    let relay_rpc_client = subxt_rpcs::RpcClient::from_url(relay_chain_url).await?;
+    let relay_chain_head_client =
+        subxt_rpcs::ChainHeadRpcMethods::<PolkadotConfig>::new(relay_rpc_client.clone());
 
     let latest = api.blocks().at_latest().await?;
     let number = latest.header().number;
@@ -120,6 +140,17 @@ async fn archive(parachain_url: &str, blocks_diff: u32) -> Result<(), Box<dyn st
 
         let mut timestamp = None;
         let mut duplicate = None;
+
+        let validation_data = extrinsics.iter().next();
+
+        let mut relay_chain_parent = None;
+        if let Some(ext) = validation_data {
+            if let Ok(Some(validation_data)) =
+                ext.as_extrinsic::<asset_hub_kusama::parachain_system::calls::types::SetValidationData>()
+            {
+               relay_chain_parent = Some(validation_data.data.validation_data.relay_parent_number);
+            }
+        }
 
         let ext = extrinsics.iter().skip(1).next();
         if let Some(ext) = ext {
@@ -180,6 +211,49 @@ async fn archive(parachain_url: &str, blocks_diff: u32) -> Result<(), Box<dyn st
                 block_number,
                 hex::encode(timestamp.unwrap_or_default())
             );
+            println!("  |--> Relay Chain Parent: {:?}", relay_chain_parent);
+
+            // Check if the parachain contained a fork during that time.
+            let blocks = chain_head_client
+                .archive_v1_hash_by_height(origin_block as usize)
+                .await
+                .map_err(|err| {
+                    eprintln!("Failed to fetch archive hash for block {origin_block}: {err}");
+                    err
+                })?;
+            println!("  |--> Archive hash for block {origin_block}: {:?}", blocks);
+
+            let blocks = chain_head_client
+                .archive_v1_hash_by_height(origin_block as usize - 1)
+                .await
+                .map_err(|err| {
+                    eprintln!(
+                        "Failed to fetch archive hash for block {}: {err}",
+                        origin_block - 1
+                    );
+                    err
+                })?;
+            println!(
+                "  |--> Archive hash for block {}: {:?}",
+                origin_block - 1,
+                blocks
+            );
+
+            if let Some(parent) = relay_chain_parent {
+                let relay_chain_block = relay_chain_head_client
+                    .archive_v1_hash_by_height(parent as usize)
+                    .await
+                    .map_err(|err| {
+                        eprintln!(
+                            "Failed to fetch relay chain archive hash for block {parent}: {err}"
+                        );
+                        err
+                    })?;
+                println!(
+                    "  |--> Relay Chain Archive hash for block {parent}: {:?}\n",
+                    relay_chain_block
+                );
+            }
         } else {
             println!(
                 "AssetHubKusama: Block #{block_number}, hash={:?}",
@@ -190,20 +264,38 @@ async fn archive(parachain_url: &str, blocks_diff: u32) -> Result<(), Box<dyn st
                 hex::encode(author.encode())
             );
             println!(
-                "  |--> Timestamp.Set: 0x{}\n",
+                "  |--> Timestamp.Set: 0x{}",
                 hex::encode(timestamp.unwrap_or_default())
             );
+            println!("  |--> Relay Chain Parent: {:?}", relay_chain_parent);
+            if let Some(parent) = relay_chain_parent {
+                let relay_chain_block = relay_chain_head_client
+                    .archive_v1_hash_by_height(parent as usize)
+                    .await
+                    .map_err(|err| {
+                        eprintln!(
+                            "Failed to fetch relay chain archive hash for block {parent}: {err}"
+                        );
+                        err
+                    })?;
+                println!(
+                    "  |--> Relay Chain Archive hash for block {parent}: {:?}\n",
+                    relay_chain_block
+                );
+            }
         }
     }
 
     println!("Archive completed successfully.");
     println!(
-        "Total blocks with the same timestamp: {} / {} ({:.2}%)",
+        "Number of sequential blocks with the same timestamp: {} / {} ({:.2}%)",
         duplicated_blocks.len(),
         blocks_diff,
         (duplicated_blocks.len() as f64 / blocks_diff as f64 * 100.0)
     );
     println!(" - produced in a row: {:#?}", authoring_in_row);
+
+    println!("Took {:?}", now.elapsed());
 
     Ok(())
 }
