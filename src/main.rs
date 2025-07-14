@@ -192,6 +192,8 @@ async fn archive(
             num_produced = 1;
         }
 
+        let ident = (0..num_produced - 1).map(|_| "    ").collect::<String>();
+
         let author_label = if same_author {
             format!("Same (times: {})", num_produced)
         } else {
@@ -201,21 +203,21 @@ async fn archive(
 
         if let Some((origin_block, _duplicate_number)) = duplicate {
             println!(
-                "[X] AssetHubKusama: Block #{block_number}, hash={:?}",
+                "{ident}[X] AssetHubKusama: Block #{block_number}, hash={:?}",
                 block.hash(),
             );
             println!(
-                "  |--> {author_label} Author: {:?}",
+                "{ident}  |--> {author_label} Author: {:?}",
                 hex::encode(author.encode())
             );
             println!(
-                "  |--> ({}) Duplicate Timestamp extrinsic found: initial={} current_block={} Timestamp.Set: 0x{}\n",
+                "{ident}  |--> ({}) Duplicate Timestamp extrinsic found: initial={} current_block={} Timestamp.Set: 0x{}\n",
                 duplicated_blocks.len(),
                 origin_block,
                 block_number,
                 hex::encode(timestamp.unwrap_or_default())
             );
-            println!("  |--> Relay Chain Parent: {:?}", relay_chain_parent);
+            println!("{ident}  |--> Relay Chain Parent: {:?}", relay_chain_parent);
 
             // Check if the parachain contained a fork during that time.
             let blocks = chain_head_client
@@ -225,7 +227,10 @@ async fn archive(
                     eprintln!("Failed to fetch archive hash for block {origin_block}: {err}");
                     err
                 })?;
-            println!("  |--> Archive hash for block {origin_block}: {:?}", blocks);
+            println!(
+                "{ident}  |--> Archive hash for block {origin_block}: {:?}",
+                blocks
+            );
 
             let blocks = chain_head_client
                 .archive_v1_hash_by_height(origin_block as usize - 1)
@@ -238,7 +243,7 @@ async fn archive(
                     err
                 })?;
             println!(
-                "  |--> Archive hash for block {}: {:?}",
+                "{ident}  |--> Archive hash for block {}: {:?}",
                 origin_block - 1,
                 blocks
             );
@@ -254,24 +259,24 @@ async fn archive(
                         err
                     })?;
                 println!(
-                    "  |--> Relay Chain Archive hash for block {parent}: {:?}\n",
+                    "{ident}  |--> Relay Chain Archive hash for block {parent}: {:?}\n",
                     relay_chain_block
                 );
             }
         } else {
             println!(
-                "AssetHubKusama: Block #{block_number}, hash={:?}",
+                "{ident}AssetHubKusama: Block #{block_number}, hash={:?}",
                 block.hash(),
             );
             println!(
-                "  |--> {author_label} Author: {:?}",
+                "{ident}  |--> {author_label} Author: {:?}",
                 hex::encode(author.encode())
             );
             println!(
-                "  |--> Timestamp.Set: 0x{}",
+                "{ident}  |--> Timestamp.Set: 0x{}",
                 hex::encode(timestamp.unwrap_or_default())
             );
-            println!("  |--> Relay Chain Parent: {:?}", relay_chain_parent);
+            println!("{ident}  |--> Relay Chain Parent: {:?}", relay_chain_parent);
             if let Some(parent) = relay_chain_parent {
                 let relay_chain_block = relay_chain_head_client
                     .archive_v1_hash_by_height(parent as usize)
@@ -283,7 +288,7 @@ async fn archive(
                         err
                     })?;
                 println!(
-                    "  |--> Relay Chain Archive hash for block {parent}: {:?}\n",
+                    "{ident}  |--> Relay Chain Archive hash for block {parent}: {:?}\n",
                     relay_chain_block
                 );
             }
