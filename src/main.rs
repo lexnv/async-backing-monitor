@@ -192,7 +192,11 @@ async fn archive(
             num_produced = 1;
         }
 
-        let author_labe = if same_author { "Same" } else { "New" };
+        let author_label = if same_author {
+            format!("Same (times: {})", num_produced)
+        } else {
+            "New".into()
+        };
         last_author = Some(author_bytes);
 
         if let Some((origin_block, _duplicate_number)) = duplicate {
@@ -201,7 +205,7 @@ async fn archive(
                 block.hash(),
             );
             println!(
-                "  |--> {author_labe} Author: {:?}",
+                "  |--> {author_label} Author: {:?}",
                 hex::encode(author.encode())
             );
             println!(
@@ -260,7 +264,7 @@ async fn archive(
                 block.hash(),
             );
             println!(
-                "  |--> {author_labe} Author: {:?}",
+                "  |--> {author_label} Author: {:?}",
                 hex::encode(author.encode())
             );
             println!(
