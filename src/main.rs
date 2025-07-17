@@ -152,6 +152,8 @@ async fn archive(
     let mut prev_timestamp = None;
     let mut prev_parent = None;
 
+    let mut delta_values = Vec::with_capacity(blocks_diff as usize);
+
     while target != number {
         let hash = legacy_methods
             .chain_get_block_hash(Some(target.into()))
@@ -314,6 +316,12 @@ async fn archive(
             );
 
             if let (Some(prev_timestamp), Some(prev_parent)) = (prev_timestamp, prev_parent) {
+                delta_values.push(
+                    timestamp_human
+                        .signed_duration_since(prev_timestamp)
+                        .num_seconds(),
+                );
+
                 println!(
                     "{ident}  |--> Elapsed {:?} seconds | jumped num={:?} relay chain blocks",
                     timestamp_human
@@ -353,6 +361,12 @@ async fn archive(
             );
 
             if let (Some(prev_timestamp), Some(prev_parent)) = (prev_timestamp, prev_parent) {
+                delta_values.push(
+                    timestamp_human
+                        .signed_duration_since(prev_timestamp)
+                        .num_seconds(),
+                );
+
                 println!(
                     "{ident}  |--> Elapsed {:?} seconds | jumped num={:?} relay chain blocks",
                     timestamp_human
@@ -370,6 +384,14 @@ async fn archive(
     }
 
     println!("Archive completed successfully.");
+    println!(" Average block time: {:.2} seconds", {
+        if !delta_values.is_empty() {
+            delta_values.iter().sum::<i64>() as f64 / delta_values.len() as f64
+        } else {
+            0.0
+        }
+    });
+
     println!(
         "Number of sequential blocks with the same timestamp: {} / {} ({:.2}%)",
         duplicated_blocks.len(),
