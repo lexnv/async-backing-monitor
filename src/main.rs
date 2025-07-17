@@ -32,6 +32,9 @@ enum Command {
     /// This command connects to the specified parachain URL and retrieves
     /// blocks within a specified range (default is 200 blocks back from the latest).
     Archive {
+        #[clap(long)]
+        chain: Option<String>,
+
         #[clap(long, default_value = "wss://rpc-kusama.helixstreet.io")]
         relay_chain_url: String,
 
@@ -67,10 +70,39 @@ pub async fn main() {
             relay_chain_url,
             parachain_url,
             blocks_diff,
+            chain,
         } => {
+            let (relay_chain_url, parachain_url, chain_name) = if let Some(chain) = chain {
+                match chain.as_str() {
+                    "kusama-asset-hub" => (
+                        "wss://rpc-kusama.helixstreet.io",
+                        "wss://asset-hub-kusama.dotters.network",
+                        "AssetHubKusama",
+                    ),
+                    "polkadot-asset-hub" => (
+                        "wss://dot-rpc.stakeworld.io",
+                        "wss://polkadot-asset-hub-rpc.polkadot.io",
+                        "AssetHubPolkadot",
+                    ),
+                    chain => {
+                        panic!(
+                        "Unsupported chain: {chain}. Supported names are: kusama-asset-hub, polkadot-asset-hub.
+                        Please use `relay_chain_url` and `parachain_url` flags to specify custom URLs."
+                        );
+                    }
+                }
+            } else {
+                (
+                    relay_chain_url.as_str(),
+                    parachain_url.as_str(),
+                    "AssetHubKusama",
+                )
+            };
+
             archive(
-                relay_chain_url.as_str(),
-                parachain_url.as_str(),
+                relay_chain_url,
+                parachain_url,
+                chain_name,
                 blocks_diff.unwrap_or(200),
             )
             .await
@@ -82,6 +114,7 @@ pub async fn main() {
 async fn archive(
     relay_chain_url: &str,
     parachain_url: &str,
+    chain_name: &str,
     blocks_diff: u32,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let now = std::time::Instant::now();
@@ -103,7 +136,7 @@ async fn archive(
     let latest = api.blocks().at_latest().await?;
     let number = latest.header().number;
     println!(
-        "AssetHubKusama: Latest parachain block #{number}, hash={:?}",
+        "{chain_name}: Latest parachain block #{number}, hash={:?}",
         latest.hash()
     );
 
@@ -221,7 +254,7 @@ async fn archive(
 
         if let Some((origin_block, _duplicate_number)) = duplicate {
             println!(
-                "{ident}[X] AssetHubKusama: Block #{block_number}, hash={:?}",
+                "{ident}[X] {chain_name}: Block #{block_number}, hash={:?}",
                 block.hash(),
             );
             println!(
@@ -291,7 +324,7 @@ async fn archive(
             }
         } else {
             println!(
-                "{ident}AssetHubKusama: Block #{block_number}, hash={:?}",
+                "{ident}{chain_name}: Block #{block_number}, hash={:?}",
                 block.hash(),
             );
             println!(
