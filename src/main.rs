@@ -153,6 +153,7 @@ async fn archive(
     let mut prev_parent = None;
 
     let mut delta_values = Vec::with_capacity(blocks_diff as usize);
+    let mut num_jumps = Vec::with_capacity(blocks_diff as usize);
 
     while target != number {
         let hash = legacy_methods
@@ -321,6 +322,7 @@ async fn archive(
                         .signed_duration_since(prev_timestamp)
                         .num_seconds(),
                 );
+                num_jumps.push(parent - prev_parent);
 
                 println!(
                     "{ident}  |--> Elapsed {:?} seconds | jumped num={:?} relay chain blocks",
@@ -366,6 +368,7 @@ async fn archive(
                         .signed_duration_since(prev_timestamp)
                         .num_seconds(),
                 );
+                num_jumps.push(parent - prev_parent);
 
                 println!(
                     "{ident}  |--> Elapsed {:?} seconds | jumped num={:?} relay chain blocks",
