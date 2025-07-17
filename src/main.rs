@@ -116,6 +116,9 @@ async fn archive(
     let mut authoring_in_row = std::collections::HashMap::new();
     let mut num_produced = 1;
 
+    let mut prev_timestamp = None;
+    let mut prev_parent = None;
+
     while target != number {
         let hash = legacy_methods
             .chain_get_block_hash(Some(target.into()))
@@ -139,6 +142,8 @@ async fn archive(
             .inspect_err(|err| println!("Failed to decode extrinsics: {:?}", err))?;
 
         let mut timestamp = None;
+        let mut timestamp_human = Default::default();
+
         let mut duplicate = None;
 
         let validation_data = extrinsics.iter().next();
@@ -156,6 +161,19 @@ async fn archive(
         if let Some(ext) = ext {
             let bytes = ext.bytes().to_vec();
             timestamp = Some(bytes.clone());
+
+            if let Ok(Some(timestamp_ext)) =
+                ext.as_extrinsic::<asset_hub_kusama::timestamp::calls::types::Set>()
+            {
+                use chrono::TimeZone;
+                let timestamp_ms = timestamp_ext.now;
+
+                let seconds = (timestamp_ms / 1_000) as i64;
+                let nanos = ((timestamp_ms % 1_000) * 1_000_000) as u32;
+                timestamp_human = chrono::Utc.timestamp_opt(seconds, nanos).single().expect(
+                    "Failed to convert timestamp to human-readable format; this should not happen",
+                );
+            }
 
             match timestamps.entry(bytes) {
                 std::collections::hash_map::Entry::Occupied(mut entry) => {
@@ -211,11 +229,12 @@ async fn archive(
                 hex::encode(author.encode())
             );
             println!(
-                "{ident}  |--> ({}) Duplicate Timestamp extrinsic found: initial={} current_block={} Timestamp.Set: 0x{}\n",
+                "{ident}  |--> ({}) Duplicate Timestamp extrinsic found: initial={} current_block={} Timestamp.Set: 0x{} | {:?}\n",
                 duplicated_blocks.len(),
                 origin_block,
                 block_number,
-                hex::encode(timestamp.unwrap_or_default())
+                hex::encode(timestamp.unwrap_or_default()),
+                timestamp_human,
             );
             println!("{ident}  |--> Relay Chain Parent: {:?}", relay_chain_parent);
 
@@ -248,19 +267,26 @@ async fn archive(
                 blocks
             );
 
-            if let Some(parent) = relay_chain_parent {
-                let relay_chain_block = relay_chain_head_client
-                    .archive_v1_hash_by_height(parent as usize)
-                    .await
-                    .map_err(|err| {
-                        eprintln!(
-                            "Failed to fetch relay chain archive hash for block {parent}: {err}"
-                        );
-                        err
-                    })?;
+            let parent = relay_chain_parent.expect("Relay chain parent should be present");
+            let relay_chain_block = relay_chain_head_client
+                .archive_v1_hash_by_height(parent as usize)
+                .await
+                .map_err(|err| {
+                    eprintln!("Failed to fetch relay chain archive hash for block {parent}: {err}");
+                    err
+                })?;
+            println!(
+                "{ident}  |--> Relay Chain Archive hash for block {parent}: {:?}\n",
+                relay_chain_block
+            );
+
+            if let (Some(prev_timestamp), Some(prev_parent)) = (prev_timestamp, prev_parent) {
                 println!(
-                    "{ident}  |--> Relay Chain Archive hash for block {parent}: {:?}\n",
-                    relay_chain_block
+                    "{ident}  |--> Elapsed {:?} seconds | jumped num={:?} relay chain blocks",
+                    timestamp_human
+                        .signed_duration_since(prev_timestamp)
+                        .num_seconds(),
+                    parent - prev_parent,
                 );
             }
         } else {
@@ -273,26 +299,41 @@ async fn archive(
                 hex::encode(author.encode())
             );
             println!(
-                "{ident}  |--> Timestamp.Set: 0x{}",
-                hex::encode(timestamp.unwrap_or_default())
+                "{ident}  |--> Timestamp.Set: 0x{} | {:?}",
+                hex::encode(timestamp.unwrap_or_default()),
+                timestamp_human,
             );
-            println!("{ident}  |--> Relay Chain Parent: {:?}", relay_chain_parent);
-            if let Some(parent) = relay_chain_parent {
-                let relay_chain_block = relay_chain_head_client
-                    .archive_v1_hash_by_height(parent as usize)
-                    .await
-                    .map_err(|err| {
-                        eprintln!(
-                            "Failed to fetch relay chain archive hash for block {parent}: {err}"
-                        );
-                        err
-                    })?;
+
+            let parent = relay_chain_parent.expect("Relay chain parent should be present");
+            println!("{ident}  |--> Relay Chain Parent: {:?}", parent);
+
+            let relay_chain_block = relay_chain_head_client
+                .archive_v1_hash_by_height(parent as usize)
+                .await
+                .map_err(|err| {
+                    eprintln!("Failed to fetch relay chain archive hash for block {parent}: {err}");
+                    err
+                })?;
+            println!(
+                "{ident}  |--> Relay Chain Archive hash for block {parent}: {:?}",
+                relay_chain_block
+            );
+
+            if let (Some(prev_timestamp), Some(prev_parent)) = (prev_timestamp, prev_parent) {
                 println!(
-                    "{ident}  |--> Relay Chain Archive hash for block {parent}: {:?}\n",
-                    relay_chain_block
+                    "{ident}  |--> Elapsed {:?} seconds | jumped num={:?} relay chain blocks",
+                    timestamp_human
+                        .signed_duration_since(prev_timestamp)
+                        .num_seconds(),
+                    parent - prev_parent,
                 );
             }
+
+            println!();
         }
+
+        prev_timestamp = Some(timestamp_human);
+        prev_parent = relay_chain_parent;
     }
 
     println!("Archive completed successfully.");
